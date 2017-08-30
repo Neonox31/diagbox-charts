@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Highcharts Example</title>
+
+
+    <!-- 1. Add these JavaScript inclusions in the head of your page -->
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    <script type="text/javascript" src="http://code.highcharts.com/highcharts.js"></script>
+
+
+    <!-- 2. Add the JavaScript to initialize the chart on document ready -->
+    <script type="text/javascript">
+        var axes = [];
+        var measures = [];
+        var $xml = null;
+
+        $(document).ready(function () {
+
+            $("#addAxisForm").submit(function (event) {
+
+                // Add axis
+                var label = $(this).serializeArray()
+                    .filter(function (elem) {
+                        return elem.name === 'label'
+                    })
+                    .map(function (elem) {
+                        return elem.value
+                    })[0];
+
+                var unit = $(this).serializeArray()
+                    .filter(function (elem) {
+                        return elem.name === 'unit'
+                    })
+                    .map(function (elem) {
+                        return elem.value
+                    })[0];
+
+                var axis = {
+                    id: label,
+                    label: label,
+                    unit: unit
+                };
+                axes.push(axis);
+
+                renderAxesTable();
+                renderMeasuresTable();
+
+                event.preventDefault();
+            });
+        });
+
+        function renderAxesTable() {
+            var table = $('#axes tbody');
+            table.empty();
+
+            axes.forEach(function (axis) {
+                var row = $('<tr></tr>').appendTo(table);
+                $('<td></td>').text(axis.label).appendTo(row);
+                $('<td></td>').text(axis.unit).appendTo(row);
+            });
+        }
+
+        function renderMeasuresTable() {
+            var table = $('#measures tbody');
+            table.empty();
+
+            measures.forEach(function (measure) {
+                var row = $('<tr id="' + measure.id + '"></tr>').appendTo(table);
+
+                $('<td></td>').text(measure.label).appendTo(row);
+
+                var tdAxis = $('<td></td>').appendTo(row);
+                var selectAxis = $('<select></select>').appendTo(tdAxis);
+                axes.forEach(function (axis) {
+                    selectAxis.append($('<option>', {
+                        value: axis.id,
+                        text: axis.label
+                    }));
+                });
+
+                $('<td><input type="checkbox" /></td>').prop('checked', measure.show).appendTo(row);
+            });
+        }
+
+        function initMeasures() {
+            $xml.find("ChannelHeader").each(function () {
+                var measure = {
+                    id: parseInt($(this).attr('id')),
+                    label: $(this).attr('mnemo'),
+                    show: false,
+                    axisId: null,
+                    data: []
+                };
+
+                $xml.find("ChannelHeader[Id='" + $(this).attr('id') + "']").next().children().each(function () {
+                    // push data points
+                    measure.data.push(
+                        parseInt($(this).attr('value'))
+                    )
+                });
+
+                measures.push(measure);
+            });
+
+            renderMeasuresTable();
+        }
+
+        function saveMeasures() {
+            measures.forEach(function (measure) {
+                measure.axisId = $('#measures tbody tr[id="' + measure.id + '"] td select').val();
+                measure.show = $('#measures tbody tr[id="' + measure.id + '"] td input[type="checkbox"]').prop('checked');
+            });
+
+            renderChart();
+        }
+
+        function renderChart() {
+
+            var vehicleLabel = $xml.find('Header').attr('VehicleLabel');
+            var ECUName = $xml.find('Header').attr('ECUName');
+            var matches = $('input[type="file"]').val().match(/^.*?\..*?\.(.*)?\..*$/);
+
+            var options = {
+                chart: {
+                    zoomType: 'x',
+                    renderTo: 'container'
+                },
+                title: {
+                    text: vehicleLabel + " - " + ECUName
+                },
+                subtitle: {
+                    text: matches[1]
+                },
+                xAxis: [{
+                    categories: [],
+                    crosshair: true
+                }],
+                yAxis: [],
+                tooltip: {
+                    shared: true
+                },
+                series: []
+            };
+
+            // Add timestamps on X axis
+            $xml.find('Channel:first Points point').each(function () {
+                options.xAxis[0].categories.push($(this).attr('timestamp'));
+            });
+
+            // Add Y axis
+            axes.forEach(function (axis) {
+                options.yAxis.push({
+                    id: axis.id,
+                    labels: {
+                        format: '{value} ' + axis.unit,
+                    },
+                    title: {
+                        text: axis.label
+                    }
+                })
+            });
+
+            measures
+                .filter(function (measure) {
+                    return measure.show;
+                })
+                .forEach(function (measure) {
+                    options.series.push({
+                        name: measure.label,
+                        data: measure.data,
+                        yAxis: measure.axisId
+                    });
+                });
+
+            var chart = new Highcharts.Chart(options);
+        }
+
+        function openFile(event) {
+            var input = event.target;
+
+            var reader = new FileReader();
+            reader.onload = function () {
+                $xml = $(reader.result);
+                initMeasures();
+            };
+            reader.readAsText(input.files[0]);
+        }
+    </script>
+
+</head>
+<body>
+
+<!-- 3. Add the container -->
+<div id="container" style="width: 90%; height: 650px; margin: 0 auto"></div>
+<center>
+    File:
+    <input type='file' accept='text/plain' onchange='openFile(event)'><br>
+    <br/>
+    <br/>
+    Axis :
+    <table id="axes" border="2">
+        <thead>
+        <tr>
+            <th>Label</th>
+            <th>Unit</th>
+        </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+
+    <form id="addAxisForm" action="#">
+        <label for="label">Label</label>
+        <input id="label" name="label" type="text">
+        <label for="unit">Unit</label>
+        <input id="unit" name="unit" type="text">
+        <input type="submit" value="Add axis"></input>
+    </form>
+    <br/>
+    <br/>
+    Measures :
+    <table id="measures" border="2">
+        <thead>
+        <tr>
+            <th>Measure</th>
+            <th>Axis</th>
+            <th>Show</th>
+        </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <button onclick="saveMeasures()">Render</button>
+</center>
+
+
+</body>
+</html>
